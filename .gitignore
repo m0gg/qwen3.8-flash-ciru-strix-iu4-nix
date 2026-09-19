@@ -1,0 +1,9 @@
+# Build results and local data — never commit
+result
+result-*
+
+# Model weights and reference trees (fetched, not tracked)
+model/
+Qwen3.8-Flash-CIRU-STRIX-IU4/
+therock-dist-linux-gfx1151-*/
+therock-dist-linux-gfx1151-*.tar.gz
