@@ -58,7 +58,11 @@
         name = "rocm-sdk-${rocmVersion}-${gpuTarget}";
         src = develWheel;
         dontUnpack = true;
-        nativeBuildInputs = [ pkgs.unzip pkgs.gzip pkgs.python3 ];
+        nativeBuildInputs = [
+          pkgs.unzip
+          pkgs.gzip
+          pkgs.python3
+        ];
         dontConfigure = true;
         dontInstall = true;
         develWhlFile = "${develWheel}";
@@ -67,98 +71,98 @@
         coreWhlFile = "${coreWheel}";
         gpuTargetEnv = "${gpuTarget}";
         buildPhase = ''
-          set -e
-          mkdir -p "$out" work
-          # Devel wheel: SDK payload lives in rocm_sdk_devel/_devel.tar
-          unzip -q -d work/devel "$develWhlFile" rocm_sdk_devel/_devel.tar
-          tar -xf work/devel/rocm_sdk_devel/_devel.tar -C "$out"
-          # Core wheel: base runtime tree (devel has ~3000 relative symlinks into
-          # ../_rocm_sdk_core; must be extracted before the libs overlay)
-          python3 - "$coreWhlFile" "$out" <<'PY'
-import zipfile, os, sys, stat
-whl, out = sys.argv[1], sys.argv[2]
-z = zipfile.ZipFile(whl)
-for info in z.infolist():
-    name = info.filename
-    dest = os.path.join(out, name)
-    mode_full = info.external_attr >> 16
-    if stat.S_ISDIR(mode_full):
-        os.makedirs(dest, exist_ok=True)
-    elif stat.S_ISLNK(mode_full):
-        os.makedirs(os.path.dirname(dest), exist_ok=True)
-        os.symlink(info.linkname, dest)
-    else:
-        os.makedirs(os.path.dirname(dest), exist_ok=True)
-        with z.open(info) as f:
-            data = f.read()
-        with open(dest, "wb") as o:
-            o.write(data)
-        perm = mode_full & 0o777
-        if perm:
-            os.chmod(dest, perm)
-PY
-          chmod -R u+w "$out"
-          test -d "$out/_rocm_sdk_core"
-          test -f "$out/_rocm_sdk_core/.info/version"
-          # Libraries wheel: runtime .so + hipblaslt Tensile data
-          unzip -q -o -d work/libs "$libsWhlFile"
-          cp -a work/libs/_rocm_sdk_libraries "$out"/
-          # Device wheel: gfx1151 kpacks, Tensile kernels, ext data + the
-          # .devel_links reconcile map used by `rocm-sdk init`
-          unzip -q -o -d work/dev "$devWhlFile"
-          cp -a work/dev/_rocm_sdk_libraries "$out"/
-          chmod -R u+w "$out"
-          # Replicate `rocm-sdk init` reconcile: create the symlinks listed in
-          # .devel_links/gfx1151.json inside _rocm_sdk_devel, pointing into
-          # _rocm_sdk_libraries. This makes the gfx1151 Tensile data reachable
-          # from the SDK root (matches the verified working venv layout).
-          python3 - "$out" "$devWhlFile" "$gpuTargetEnv" <<'PY'
-import zipfile, os, sys, json
-out, whl, gpu = sys.argv[1], sys.argv[2], sys.argv[3]
-z = zipfile.ZipFile(whl)
-raw = z.read(f"_rocm_sdk_libraries/.devel_links/{gpu}.json")
-spec = json.loads(raw)
-root = os.path.join(out, "_rocm_sdk_devel")
-n = 0
-for link in spec["links"]:
-    rel = link["relpath"]
-    tgt = link["target"]
-    dest = os.path.join(root, rel)
-    os.makedirs(os.path.dirname(dest), exist_ok=True)
-    if os.path.islink(dest) or os.path.exists(dest):
-        continue
-    os.symlink(tgt, dest)
-    n += 1
-print(f"reconciled {n} gfx1151 symlinks into _rocm_sdk_devel")
-PY
-          # Drop the one known-harmless dangling amdsmi symlink so stdenv's
-          # noBrokenSymlinks (fixupPhase) passes. amdsmi is not used by the
-          # llama build or server; the real .so lives in lib/.
-          A="$out/_rocm_sdk_devel/share/amd_smi/amdsmi"
-          if [ -L "$A/libamd_smi.so" ] && [ ! -e "$A/libamd_smi.so" ]; then
-            rm -f "$A/libamd_smi.so"
-          fi
-          chmod -R u+w "$out"
+                    set -e
+                    mkdir -p "$out" work
+                    # Devel wheel: SDK payload lives in rocm_sdk_devel/_devel.tar
+                    unzip -q -d work/devel "$develWhlFile" rocm_sdk_devel/_devel.tar
+                    tar -xf work/devel/rocm_sdk_devel/_devel.tar -C "$out"
+                    # Core wheel: base runtime tree (devel has ~3000 relative symlinks into
+                    # ../_rocm_sdk_core; must be extracted before the libs overlay)
+                    python3 - "$coreWhlFile" "$out" <<'PY'
+          import zipfile, os, sys, stat
+          whl, out = sys.argv[1], sys.argv[2]
+          z = zipfile.ZipFile(whl)
+          for info in z.infolist():
+              name = info.filename
+              dest = os.path.join(out, name)
+              mode_full = info.external_attr >> 16
+              if stat.S_ISDIR(mode_full):
+                  os.makedirs(dest, exist_ok=True)
+              elif stat.S_ISLNK(mode_full):
+                  os.makedirs(os.path.dirname(dest), exist_ok=True)
+                  os.symlink(info.linkname, dest)
+              else:
+                  os.makedirs(os.path.dirname(dest), exist_ok=True)
+                  with z.open(info) as f:
+                      data = f.read()
+                  with open(dest, "wb") as o:
+                      o.write(data)
+                  perm = mode_full & 0o777
+                  if perm:
+                      os.chmod(dest, perm)
+          PY
+                    chmod -R u+w "$out"
+                    test -d "$out/_rocm_sdk_core"
+                    test -f "$out/_rocm_sdk_core/.info/version"
+                    # Libraries wheel: runtime .so + hipblaslt Tensile data
+                    unzip -q -o -d work/libs "$libsWhlFile"
+                    cp -a work/libs/_rocm_sdk_libraries "$out"/
+                    # Device wheel: gfx1151 kpacks, Tensile kernels, ext data + the
+                    # .devel_links reconcile map used by `rocm-sdk init`
+                    unzip -q -o -d work/dev "$devWhlFile"
+                    cp -a work/dev/_rocm_sdk_libraries "$out"/
+                    chmod -R u+w "$out"
+                    # Replicate `rocm-sdk init` reconcile: create the symlinks listed in
+                    # .devel_links/gfx1151.json inside _rocm_sdk_devel, pointing into
+                    # _rocm_sdk_libraries. This makes the gfx1151 Tensile data reachable
+                    # from the SDK root (matches the verified working venv layout).
+                    python3 - "$out" "$devWhlFile" "$gpuTargetEnv" <<'PY'
+          import zipfile, os, sys, json
+          out, whl, gpu = sys.argv[1], sys.argv[2], sys.argv[3]
+          z = zipfile.ZipFile(whl)
+          raw = z.read(f"_rocm_sdk_libraries/.devel_links/{gpu}.json")
+          spec = json.loads(raw)
+          root = os.path.join(out, "_rocm_sdk_devel")
+          n = 0
+          for link in spec["links"]:
+              rel = link["relpath"]
+              tgt = link["target"]
+              dest = os.path.join(root, rel)
+              os.makedirs(os.path.dirname(dest), exist_ok=True)
+              if os.path.islink(dest) or os.path.exists(dest):
+                  continue
+              os.symlink(tgt, dest)
+              n += 1
+          print(f"reconciled {n} gfx1151 symlinks into _rocm_sdk_devel")
+          PY
+                    # Drop the one known-harmless dangling amdsmi symlink so stdenv's
+                    # noBrokenSymlinks (fixupPhase) passes. amdsmi is not used by the
+                    # llama build or server; the real .so lives in lib/.
+                    A="$out/_rocm_sdk_devel/share/amd_smi/amdsmi"
+                    if [ -L "$A/libamd_smi.so" ] && [ ! -e "$A/libamd_smi.so" ]; then
+                      rm -f "$A/libamd_smi.so"
+                    fi
+                    chmod -R u+w "$out"
 
-          # Sanity checks (postBuild is NOT a stdenv phase, so put them here).
-          R="$out/_rocm_sdk_devel"
-          test -x "$R/bin/amdclang++"
-          test -f "$R/lib/cmake/hip/hip-config.cmake"
-          test -f "$R/lib/cmake/hipblas/hipblas-config.cmake"
-          test -f "$R/lib/cmake/rocblas/rocblas-config.cmake"
-          test -d "$R/lib/rocm_sysdeps"
-          test -d "$R/lib/llvm/lib"
-          # gfx1151 Tensile data reachable from the SDK root (via reconcile):
-          test -d "$R/lib/hipblaslt/library/gfx1151"
-          test -f "$R/.kpack/blas_lib_gfx1151.kpack"
-          # No dangling symlinks anywhere (the reconcile links must resolve).
-          broken=$(find "$out" -type l ! -exec test -e "{}" \; -print | wc -l)
-          if [ "$broken" -ne 0 ]; then
-            echo "ERROR: $broken dangling symlinks in $out" >&2
-            find "$out" -type l ! -exec test -e "{}" \; -print | head -5
-            exit 1
-          fi
-          echo "rocm-sdk-${rocmVersion}-${gpuTarget} assembled"
+                    # Sanity checks (postBuild is NOT a stdenv phase, so put them here).
+                    R="$out/_rocm_sdk_devel"
+                    test -x "$R/bin/amdclang++"
+                    test -f "$R/lib/cmake/hip/hip-config.cmake"
+                    test -f "$R/lib/cmake/hipblas/hipblas-config.cmake"
+                    test -f "$R/lib/cmake/rocblas/rocblas-config.cmake"
+                    test -d "$R/lib/rocm_sysdeps"
+                    test -d "$R/lib/llvm/lib"
+                    # gfx1151 Tensile data reachable from the SDK root (via reconcile):
+                    test -d "$R/lib/hipblaslt/library/gfx1151"
+                    test -f "$R/.kpack/blas_lib_gfx1151.kpack"
+                    # No dangling symlinks anywhere (the reconcile links must resolve).
+                    broken=$(find "$out" -type l ! -exec test -e "{}" \; -print | wc -l)
+                    if [ "$broken" -ne 0 ]; then
+                      echo "ERROR: $broken dangling symlinks in $out" >&2
+                      find "$out" -type l ! -exec test -e "{}" \; -print | head -5
+                      exit 1
+                    fi
+                    echo "rocm-sdk-${rocmVersion}-${gpuTarget} assembled"
         '';
       };
 
@@ -199,7 +203,11 @@ PY
         dontUnpack = true;
         dontConfigure = true;
         dontInstall = true;
-        nativeBuildInputs = [ pkgs.patchelf pkgs.gzip pkgs.coreutils ];
+        nativeBuildInputs = [
+          pkgs.patchelf
+          pkgs.gzip
+          pkgs.coreutils
+        ];
         buildPhase = ''
           set -e
           payload=ciru-runtime-v${ciruVersion}-nixos-${gpuTarget}
@@ -298,22 +306,18 @@ PY
       ];
       downloadModel =
         let
-          perFile =
-            f:
-            ''
-              rel="${f.path}"
-              if echo "${f.sha256}  $MODEL_DIR/$rel" | sha256sum -c - >/dev/null 2>&1; then
-                echo "up to date: $rel"
-              else
-                echo "fetching $rel"
-                ${hfCli} download "${hfRepo}" "$rel" --local-dir "$MODEL_DIR"
-                echo "${f.sha256}  $MODEL_DIR/$rel" | sha256sum -c -
-              fi
-            '';
+          perFile = f: ''
+            rel="${f.path}"
+            if echo "${f.sha256}  $MODEL_DIR/$rel" | sha256sum -c - >/dev/null 2>&1; then
+              echo "up to date: $rel"
+            else
+              echo "fetching $rel"
+              ${hfCli} download "${hfRepo}" "$rel" --local-dir "$MODEL_DIR"
+              echo "${f.sha256}  $MODEL_DIR/$rel" | sha256sum -c -
+            fi
+          '';
         in
-        pkgs.writeScriptBin "download-qwen38-ciru-model"
-        ''
-          #!/usr/bin/env bash
+        pkgs.writeScriptBin "download-qwen38-ciru-model" ''
           set -euo pipefail
           if [ "$#" -ge 1 ]; then MODEL_DIR="$1"; else MODEL_DIR="$PWD/model"; fi
           echo "Downloading model into $MODEL_DIR"
@@ -332,26 +336,31 @@ PY
           modelDir ? "\${PWD}/model",
           enableVision ? "1",
         }:
-        pkgs.writeScript "run-server" ''
-          #!/usr/bin/env bash
-          set -euo pipefail
-          export MODEL_DIR="''${MODEL_DIR:-${modelDir}}"
-          export RUNTIME_DIR="${ciruRuntime}"
-          export CIRU_RUNTIME_ROOT="${ciruRuntime}/runtime"
-          export ROCM_ROOT="${rocmSdk}/_rocm_sdk_devel"
-          export ENABLE_VISION="''${ENABLE_VISION:-${enableVision}}"
-          # The pinned pwilkin ROCr is gfx1151-native; any HSA_OVERRIDE value
-          # (the profile default is 11.5.1) breaks device enumeration with it.
-          # Export empty so the profile's :- fallback keeps it off.
-          export HSA_OVERRIDE_GFX_VERSION="''${HSA_OVERRIDE_GFX_VERSION:-}"
-          export GGML_HIP_ENABLE_UNIFIED_MEMORY="''${GGML_HIP_ENABLE_UNIFIED_MEMORY:-1}"
-          extra="''${LD_LIBRARY_PATH:+:$LD_LIBRARY_PATH}"
-          # Pinned HIP/ROCr first; TheRock's own copies as fallback for
-          # environments where the PM4 runtime cannot open /dev/kfd.
-          export LD_LIBRARY_PATH="$CIRU_RUNTIME_ROOT/hip/lib:$CIRU_RUNTIME_ROOT/rocr/lib:${gccLib}:${rocmSdk}/_rocm_sdk_devel/lib:${rocmSdk}/_rocm_sdk_devel/lib/rocm_sysdeps/lib:${rocmSdk}/_rocm_sdk_devel/lib/llvm/lib:${rocmSdk}/_rocm_sdk_core/lib$extra"
-          export MODEL_VARIANT=IU4
-          exec bash "$RUNTIME_DIR/scripts/ciru/run-server.sh" --port "''${PORT:-${port}}" "$@"
-        '';
+        pkgs.writeShellApplication {
+          name = "run-server";
+          text = ''
+            export MODEL_DIR="''${MODEL_DIR:-${modelDir}}"
+            export RUNTIME_DIR="${ciruRuntime}"
+            export CIRU_RUNTIME_ROOT="${ciruRuntime}/runtime"
+            export ROCM_ROOT="${rocmSdk}/_rocm_sdk_devel"
+            export ENABLE_VISION="''${ENABLE_VISION:-${enableVision}}"
+            # The pinned pwilkin ROCr is gfx1151-native; any HSA_OVERRIDE value
+            # (the profile default is 11.5.1) breaks device enumeration with it.
+            # Export empty so the profile's :- fallback keeps it off.
+            export HSA_OVERRIDE_GFX_VERSION="''${HSA_OVERRIDE_GFX_VERSION:-}"
+            export GGML_HIP_ENABLE_UNIFIED_MEMORY="''${GGML_HIP_ENABLE_UNIFIED_MEMORY:-1}"
+            extra="''${LD_LIBRARY_PATH:+:$LD_LIBRARY_PATH}"
+            # Pinned HIP/ROCr first; TheRock's own copies as fallback for
+            # environments where the PM4 runtime cannot open /dev/kfd.
+            export LD_LIBRARY_PATH="$CIRU_RUNTIME_ROOT/hip/lib:$CIRU_RUNTIME_ROOT/rocr/lib:${gccLib}:${rocmSdk}/_rocm_sdk_devel/lib:${rocmSdk}/_rocm_sdk_devel/lib/rocm_sysdeps/lib:${rocmSdk}/_rocm_sdk_devel/lib/llvm/lib:${rocmSdk}/_rocm_sdk_core/lib$extra"
+            export MODEL_VARIANT=IU4
+            exec bash "$RUNTIME_DIR/scripts/ciru/run-server.sh" --port "''${PORT:-${port}}" "$@"
+          '';
+          runtimeInputs = with pkgs; [
+            bash
+            glibc
+          ];
+        };
 
     in
     {
@@ -364,7 +373,7 @@ PY
       };
       apps.${system}.default = {
         type = "app";
-        program = "${self.packages.${system}.default}";
+        program = lib.getExe self.packages.${system}.run-server;
       };
       devShells.${system}.default = pkgs.mkShell {
         packages = [
